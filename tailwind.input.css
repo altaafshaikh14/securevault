@@ -1,0 +1,110 @@
+/* Self-hosted variable fonts (Latin + Latin Extended subsets from Google Fonts, OFL licensed) */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url(fonts/inter-latin-ext.woff2) format('woff2');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url(fonts/inter-latin.woff2) format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url(fonts/jetbrains-mono-latin-ext.woff2) format('woff2');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url(fonts/jetbrains-mono-latin.woff2) format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    background-color: #070a12;
+    color: #f8fafc;
+    font-family: 'Inter', sans-serif;
+    /* Static, low-opacity tint for depth (no glow) */
+    background-image: linear-gradient(180deg, rgba(72, 102, 209, 0.12) 0%, rgba(138, 104, 207, 0.05) 45%, transparent 100%);
+    background-repeat: no-repeat;
+}
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 9999px;
+}
+.glass-panel {
+    background: rgba(15, 23, 42, 0.78);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+@keyframes pulseRing {
+    0% { transform: scale(0.96); opacity: 0.8; }
+    50% { transform: scale(1.03); opacity: 0.3; }
+    100% { transform: scale(0.96); opacity: 0.8; }
+}
+.biometric-ring {
+    animation: pulseRing 2s ease-in-out infinite;
+}
+/* dvh tracks the mobile browser's collapsing toolbars; vh is the fallback */
+.app-viewport {
+    height: 100vh;
+    height: 100dvh;
+}
+.fab-safe {
+    bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+}
+.no-scrollbar {
+    scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+summary::-webkit-details-marker {
+    display: none;
+}
+/* Finger-sized tap targets for vault card actions on phones and tablets */
+@media (pointer: coarse) {
+    #vault-grid button {
+        min-width: 40px;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    /* iOS Safari zooms the page when a focused field is under 16px; !important beats Tailwind text-* utilities */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+}
+/* On phones, toasts sit above the floating add button instead of covering the header */
+@media (max-width: 639px) {
+    #toast-container {
+        top: auto;
+        bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+    }
+}

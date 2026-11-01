@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.DS_Store
+Thumbs.db
+*.log
+# Never commit decrypted exports or vault backups
+*.vault.json
+*decrypted*.json
+*decrypted*.csv

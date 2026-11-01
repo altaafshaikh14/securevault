@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <!-- Everything is self-hosted; connect-src only allows the k-anonymity breach API, blocking exfiltration via fetch or image beacons -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://api.pwnedpasswords.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+    <meta name="referrer" content="no-referrer">
+    <title>SecureVault — Zero-Knowledge Password Manager</title>
+    <meta name="theme-color" content="#0b0f19">
+    <meta name="description" content="Client-side AES-256-GCM encrypted password vault PWA with Auto-Complete, Auto-Save Popup & Emergency Recovery Kit">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- Tailwind + custom CSS + @font-face are compiled into securevault.css (see tailwind.config.js) -->
+    <link rel="stylesheet" href="securevault.css">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen selection:bg-indigo-500 selection:text-white overflow-x-hidden">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" role="status" aria-live="polite" class="fixed top-4 right-4 z-[80] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <!-- ==================== AUTHENTICATION / LOCK SCREEN ==================== -->
+    <main id="auth-screen" class="min-h-screen flex items-center justify-center p-4 sm:p-6">
+        <div class="w-full max-w-md glass-panel rounded-3xl p-6 sm:p-8 border border-slate-800/90 shadow-2xl">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-11 h-11 rounded-2xl bg-indigo-500 flex items-center justify-center text-white">
+                        <i class="fa-solid fa-shield-halved text-lg"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-extrabold text-white tracking-tight">SecureVault</h1>
+                        <p id="auth-subtitle" class="text-xs text-slate-400">Zero-Knowledge AES-256-GCM Password Manager</p>
+                    </div>
+                </div>
+                <button id="pwa-install-btn" class="hidden text-xs bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-3 py-1.5 rounded-xl border border-indigo-500/30 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i> Install App
+                </button>
+            </div>
+
+            <div class="mb-5 flex flex-wrap items-center gap-2 text-[11px]">
+                <span class="px-2.5 py-1 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-medium">
+                    <i class="fa-solid fa-lock mr-1"></i>AES-256-GCM
+                </span>
+                <span class="px-2.5 py-1 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 font-medium">
+                    <i class="fa-solid fa-fingerprint mr-1"></i>Face ID & Fingerprint
+                </span>
+                <span id="storage-persist-badge" class="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+                    <i class="fa-solid fa-database mr-1"></i>Local Vault
+                </span>
+            </div>
+
+            <!-- Setup New Vault Form -->
+            <form id="setup-form" class="space-y-4 hidden" data-submit="handleSetupVault">
+                <div class="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 text-xs text-indigo-200 leading-relaxed">
+                    <strong class="text-indigo-300 block mb-0.5"><i class="fa-solid fa-key mr-1"></i>Dual-Slot Protection:</strong>
+                    Creates your Master Password plus a 20-character <strong>Emergency Recovery Key</strong> so you never lose access.
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Create Master Password</label>
+                    <div class="relative">
+                        <input type="password" id="setup-password" required minlength="8" placeholder="Enter strong master password..."
+                            class="w-full bg-slate-900/90 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-white pr-10 focus:outline-none"
+                            data-input="updateSetupStrength">
+                        <button type="button" data-action="togglePasswordField" data-arg="setup-password" aria-label="Show or hide password" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1">
+                            <i class="fa-regular fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="mt-2 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                        <div id="setup-strength-bar" class="h-full w-0 bg-indigo-500 transition-all duration-300"></div>
+                    </div>
+                    <p id="setup-strength-text" class="text-[11px] text-slate-400 mt-1">Minimum 8 characters required</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Confirm Master Password</label>
+                    <input type="password" id="setup-confirm" required minlength="8" placeholder="Re-enter master password..."
+                        class="w-full bg-slate-900/90 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-white focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Master Password Hint (Optional)</label>
+                    <input type="text" id="setup-hint" placeholder="e.g., First pet + birth year"
+                        class="w-full bg-slate-900/90 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none">
+                    <p class="text-[11px] text-amber-300/80 mt-1">The hint is stored unencrypted on this device — never include any part of your password.</p>
+                </div>
+
+                <button type="submit" id="setup-submit-btn" class="w-full py-3.5 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold text-sm transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-key"></i> Initialize Vault & Recovery Key
+                </button>
+
+                <div class="pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                    <span>Have a backup file?</span>
+                    <label class="text-indigo-400 hover:underline cursor-pointer font-semibold">
+                        Import .vault JSON
+                        <input type="file" accept=".json,.vault" class="hidden" data-change="importVaultFile">
+                    </label>
+                </div>
+            </form>
+
+            <!-- Unlock Existing Vault Form -->
+            <form id="unlock-form" class="space-y-4 hidden" data-submit="handleUnlockVault">
+                <div id="vault-corrupt-warning" class="hidden p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-200 leading-relaxed">
+                    <strong class="text-rose-300 block mb-0.5"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Stored vault data is unreadable.</strong>
+                    Restore a .vault backup below, or wipe the vault to start over.
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Master Password</label>
+                        <button type="button" data-action="toggleHintDisplay" id="show-hint-btn" class="text-xs text-indigo-400 hover:underline font-medium">
+                            Show Hint
+                        </button>
+                    </div>
+                    <div class="relative">
+                        <input type="password" id="unlock-password" required autocomplete="current-password" placeholder="Enter Master Password to decrypt..."
+                            class="w-full bg-slate-900/90 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3.5 text-sm text-white pr-10 focus:outline-none">
+                        <button type="button" data-action="togglePasswordField" data-arg="unlock-password" aria-label="Show or hide password" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1">
+                            <i class="fa-regular fa-eye"></i>
+                        </button>
+                    </div>
+
+                    <div id="hint-box" class="hidden mt-2.5 p-3 rounded-xl bg-slate-900 border border-indigo-500/30 text-xs text-slate-200 flex items-start gap-2">
+                        <i class="fa-regular fa-lightbulb mt-0.5 text-amber-400"></i>
+                        <div>
+                            <span class="font-semibold">Password Hint:</span>
+                            <span id="hint-text" class="ml-1 text-slate-300"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Optional Unlock PIN Field (cryptographically combined with the master password) -->
+                <div id="unlock-mfa-box" class="hidden">
+                    <label for="unlock-mfa-code" class="block text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1.5">
+                        Unlock PIN Required
+                    </label>
+                    <input type="password" inputmode="numeric" id="unlock-mfa-code" maxlength="6" autocomplete="off" placeholder="4–6 digit Unlock PIN"
+                        class="w-full bg-slate-900/90 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm font-mono tracking-widest text-center text-white focus:outline-none">
+                </div>
+
+                <div class="flex flex-col gap-2.5">
+                    <button type="submit" id="unlock-submit-btn" class="w-full py-3.5 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold text-sm transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-unlock-keyhole"></i> Decrypt & Unlock
+                    </button>
+
+                    <!-- Platform biometric unlock (Face ID / Touch ID / Windows Hello / Android) via WebAuthn PRF -->
+                    <div id="biometric-unlock-row" class="hidden pt-1">
+                        <button type="button" data-action="openBiometricScannerModal" data-arg="auto" data-arg2="unlock" class="w-full py-2.5 px-3 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 border border-indigo-500/30 font-semibold text-xs transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-fingerprint text-indigo-400"></i>
+                            <span>Unlock with Face ID / Fingerprint</span>
+                        </button>
+                    </div>
+                    <p id="biometric-status-hint" class="text-[11px] text-center text-slate-400"></p>
+                </div>
+
+                <div class="pt-1 text-center">
+                    <button type="button" data-action="switchToRecoveryForm" class="text-xs text-amber-400 hover:underline font-medium transition">
+                        Forgot Master Password? Use Recovery Key
+                    </button>
+                </div>
+
+                <div class="pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                    <label class="hover:text-white cursor-pointer transition flex items-center gap-1 font-medium">
+                        <i class="fa-solid fa-file-import text-indigo-400"></i> Restore .vault
+                        <input type="file" accept=".json,.vault" class="hidden" data-change="importVaultFile">
+                    </label>
+                    <button type="button" data-action="openResetVaultModal" class="text-rose-400 hover:underline transition flex items-center gap-1 font-medium">
+                        <i class="fa-solid fa-trash-can"></i> Wipe Vault
+                    </button>
+                </div>
+            </form>
+
+            <!-- Emergency Recovery Key Reset Form -->
+            <form id="recovery-form" class="space-y-4 hidden" data-submit="handleRecoveryReset">
+                <div class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 leading-relaxed">
+                    Enter your 20-character <strong>Emergency Recovery Key</strong> to decrypt your vault and set a new Master Password. A new Recovery Key will be issued afterwards.
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Emergency Recovery Key</label>
+                    <input type="text" id="recovery-key-input" required placeholder="SV-XXXX-XXXX-XXXX-XXXX-XXXX"
+                        class="w-full bg-slate-900/90 border border-slate-700 focus:border-amber-500 rounded-xl px-4 py-3 text-sm font-mono uppercase text-white focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">New Master Password</label>
+                    <input type="password" id="recovery-new-password" required minlength="8" placeholder="Enter new Master Password..."
+                        class="w-full bg-slate-900/90 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-white focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">New Password Hint (Optional)</label>
+                    <input type="text" id="recovery-new-hint" placeholder="Optional password hint"
+                        class="w-full bg-slate-900/90 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none">
+                </div>
+
+                <button type="submit" id="recovery-submit-btn" class="w-full py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-rotate"></i> Recover Vault & Reset Password
+                </button>
+
+                <div class="pt-2 text-center">
+                    <button type="button" data-action="checkExistingVault" class="text-xs text-slate-400 hover:text-white transition">
+                        ← Back to Master Password Login
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <!-- ==================== MAIN VAULT APPLICATION ==================== -->
+    <div id="app-screen" class="hidden app-viewport overflow-hidden flex flex-col lg:flex-row">
+        
+        <!-- Sidebar Navigation (compact fixed header on mobile) -->
+        <aside class="w-full lg:w-72 glass-panel border-b lg:border-b-0 lg:border-r border-slate-800/80 flex flex-col justify-between shrink-0 lg:h-full lg:overflow-y-auto z-30">
+            <div class="px-4 pt-3 pb-2 sm:p-6">
+                <div class="flex items-center justify-between pb-3 lg:pb-4 border-b border-slate-800/80">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center text-white">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h2 class="font-bold text-base text-white leading-none">SecureVault</h2>
+                                <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Unlocked</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-1 font-mono">
+                                Auto-Lock: <span id="idle-timer-display" class="font-semibold text-indigo-400">03:00</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Mobile Quick Actions -->
+                    <div class="flex items-center gap-1.5 lg:hidden">
+                        <button data-action="openSecurityCenterModal" title="Security Center & Vault Status" aria-label="Security Center & Vault Status" class="relative p-2 rounded-xl bg-slate-800 text-emerald-300">
+                            <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
+                            <span class="status-alert-dot hidden absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-slate-900" aria-hidden="true"></span>
+                        </button>
+                        <button data-action="openRecoveryKitModal" title="Emergency Recovery Kit" aria-label="Emergency Recovery Kit" class="p-2 rounded-xl bg-slate-800 text-amber-400">
+                            <i class="fa-solid fa-life-ring" aria-hidden="true"></i>
+                        </button>
+                        <button data-action="openGeneratorModal" title="Password Generator" aria-label="Password Generator" class="p-2 rounded-xl bg-slate-800 text-slate-200">
+                            <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                        </button>
+                        <button data-action="lockVault" title="Lock Vault" aria-label="Lock Vault" class="p-2 rounded-xl bg-rose-500/20 text-rose-400">
+                            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Primary Action Button (desktop; mobile uses the floating button) -->
+                <button data-action="openItemModal" class="hidden lg:flex mt-4 w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold text-xs transition items-center justify-center gap-2">
+                    <i class="fa-solid fa-plus"></i> Add Encrypted Credential
+                </button>
+
+                <!-- Category Filters -->
+                <div class="hidden lg:block mt-6 mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Categories</div>
+                <nav class="mt-2 lg:mt-0 flex lg:flex-col gap-1.5 overflow-x-auto pb-1 lg:pb-0 no-scrollbar">
+                    <button data-action="setCategoryFilter" data-arg="all" id="cat-all" class="cat-btn flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition whitespace-nowrap bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-layer-group w-4 text-center"></i> All Items</span>
+                        <span id="count-all" class="ml-2 px-2 py-0.5 text-[10px] rounded-full font-mono bg-indigo-500/30 text-white">0</span>
+                    </button>
+                    <button data-action="setCategoryFilter" data-arg="favorites" id="cat-favorites" class="cat-btn flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition whitespace-nowrap">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-star w-4 text-center text-amber-400"></i> Favorites</span>
+                        <span id="count-favorites" class="ml-2 px-2 py-0.5 text-[10px] rounded-full font-mono bg-slate-800 text-slate-300">0</span>
+                    </button>
+                    <button data-action="setCategoryFilter" data-arg="login" id="cat-login" class="cat-btn flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition whitespace-nowrap">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-globe w-4 text-center text-sky-400"></i> Logins</span>
+                        <span id="count-login" class="ml-2 px-2 py-0.5 text-[10px] rounded-full font-mono bg-slate-800 text-slate-300">0</span>
+                    </button>
+                    <button data-action="setCategoryFilter" data-arg="card" id="cat-card" class="cat-btn flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition whitespace-nowrap">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-credit-card w-4 text-center text-purple-400"></i> Payment Cards</span>
+                        <span id="count-card" class="ml-2 px-2 py-0.5 text-[10px] rounded-full font-mono bg-slate-800 text-slate-300">0</span>
+                    </button>
+                    <button data-action="setCategoryFilter" data-arg="note" id="cat-note" class="cat-btn flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition whitespace-nowrap">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-note-sticky w-4 text-center text-emerald-400"></i> Secure Notes</span>
+                        <span id="count-note" class="ml-2 px-2 py-0.5 text-[10px] rounded-full font-mono bg-slate-800 text-slate-300">0</span>
+                    </button>
+                    <button data-action="setCategoryFilter" data-arg="passkey" id="cat-passkey" class="cat-btn flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition whitespace-nowrap">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-fingerprint w-4 text-center text-indigo-400"></i> Passkeys</span>
+                        <span id="count-passkey" class="ml-2 px-2 py-0.5 text-[10px] rounded-full font-mono bg-slate-800 text-slate-300">0</span>
+                    </button>
+                    <button data-action="setCategoryFilter" data-arg="trash" id="cat-trash" class="cat-btn flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition whitespace-nowrap mt-1 lg:border-t lg:border-slate-800 lg:pt-3">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-trash-arrow-up w-4 text-center text-rose-400"></i> Recently Deleted</span>
+                        <span id="count-trash" class="ml-2 px-2 py-0.5 text-[10px] rounded-full font-mono bg-rose-500/20 text-rose-300">0</span>
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Bottom Tools & Recovery Controls (Desktop) -->
+            <div class="hidden lg:flex flex-col gap-2 p-6 border-t border-slate-800/80">
+                <button data-action="openSecurityCenterModal" class="w-full py-2.5 px-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-medium border border-slate-800 transition flex items-center justify-between">
+                    <span class="flex items-center gap-2"><i class="fa-solid fa-user-shield text-indigo-400"></i> Security Center & Status</span>
+                    <span class="flex items-center gap-2">
+                        <span class="status-alert-dot hidden w-2.5 h-2.5 rounded-full bg-amber-400" aria-hidden="true"></span>
+                        <i class="fa-solid fa-chevron-right text-[10px] text-slate-500"></i>
+                    </span>
+                </button>
+                <button data-action="openRecoveryKitModal" class="w-full py-2.5 px-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-medium border border-slate-800 transition flex items-center justify-between">
+                    <span class="flex items-center gap-2"><i class="fa-solid fa-life-ring text-amber-400"></i> Recovery Kit</span>
+                    <i class="fa-solid fa-chevron-right text-[10px] text-slate-500"></i>
+                </button>
+                <button data-action="openGeneratorModal" class="w-full py-2.5 px-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-medium border border-slate-800 transition flex items-center justify-between">
+                    <span class="flex items-center gap-2"><i class="fa-solid fa-dice text-purple-400"></i> Password Generator</span>
+                    <i class="fa-solid fa-chevron-right text-[10px] text-slate-500"></i>
+                </button>
+                <button data-action="openCryptoInspectorModal" class="w-full py-2.5 px-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-medium border border-slate-800 transition flex items-center justify-between">
+                    <span class="flex items-center gap-2"><i class="fa-solid fa-code text-sky-400"></i> Inspect Ciphertext</span>
+                    <i class="fa-solid fa-chevron-right text-[10px] text-slate-500"></i>
+                </button>
+                <div class="grid grid-cols-2 gap-2 mt-1">
+                    <button data-action="exportEncryptedVault" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> Backup
+                    </button>
+                    <button data-action="lockVault" class="py-2.5 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-semibold transition flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-lock"></i> Lock
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace Content: header rows stay put, only the password list scrolls -->
+        <section class="flex-1 min-h-0 flex flex-col min-w-0 px-4 pt-3 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8 max-w-6xl mx-auto w-full">
+            
+            <!-- Clipboard Auto-Clear Countdown Bar -->
+            <div id="clipboard-countdown-bar" class="hidden shrink-0 mb-3 px-4 py-2.5 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-200 flex items-center justify-between text-xs">
+                <span class="flex items-center gap-2">
+                    <i class="fa-solid fa-stopwatch text-indigo-400"></i>
+                    <span><strong>Auto-Clipboard Sanitizer:</strong> Copied secret will be cleared in <strong id="clipboard-timer-sec" class="font-mono text-white">30s</strong></span>
+                </span>
+                <button data-action="scrubClipboardNow" class="px-3 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-semibold text-[11px] transition">
+                    Scrub Now
+                </button>
+            </div>
+
+            <!-- Search & Password Health Metrics -->
+            <div class="shrink-0 grid grid-cols-1 lg:grid-cols-12 gap-2.5 sm:gap-4 mb-3 sm:mb-6">
+                <div class="lg:col-span-6 relative flex items-center">
+                    <i class="fa-solid fa-magnifying-glass absolute left-4 text-slate-400 text-sm"></i>
+                    <input type="text" id="search-input" data-input="renderVaultItems" aria-label="Search vault" placeholder="Search logins, usernames, URLs..."
+                        class="w-full bg-slate-900/90 border border-slate-800 focus:border-indigo-500 rounded-2xl pl-11 pr-10 py-3 sm:py-3.5 text-sm text-white focus:outline-none">
+                    <button id="clear-search-btn" data-action="clearSearch" aria-label="Clear search" class="hidden absolute right-3.5 text-slate-400 hover:text-white p-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div class="lg:col-span-6 grid grid-cols-4 gap-2.5">
+                    <button type="button" data-action="openHealthModal" aria-label="Password health details" class="text-left px-2.5 py-2 sm:p-3 rounded-2xl glass-panel border border-slate-800/80 hover:border-slate-600 transition flex flex-col justify-between">
+                        <span class="text-[10px] uppercase tracking-wider text-slate-400">Health <i class="fa-solid fa-circle-info text-[9px] text-slate-500"></i></span>
+                        <span id="metric-score" class="text-base font-bold text-emerald-400 font-mono">100%</span>
+                    </button>
+                    <button type="button" data-action="openHealthModal" data-arg="weak" aria-label="Show weak passwords" class="text-left px-2.5 py-2 sm:p-3 rounded-2xl glass-panel border border-slate-800/80 hover:border-slate-600 transition flex flex-col justify-between">
+                        <span class="text-[10px] uppercase tracking-wider text-slate-400">Weak</span>
+                        <span id="metric-weak" class="text-base font-bold text-amber-400 font-mono">0</span>
+                    </button>
+                    <button type="button" data-action="openHealthModal" data-arg="reused" aria-label="Show reused passwords" class="text-left px-2.5 py-2 sm:p-3 rounded-2xl glass-panel border border-slate-800/80 hover:border-slate-600 transition flex flex-col justify-between">
+                        <span class="text-[10px] uppercase tracking-wider text-slate-400">Reused</span>
+                        <span id="metric-reused" class="text-base font-bold text-purple-400 font-mono">0</span>
+                    </button>
+                    <button type="button" data-action="openHealthModal" data-arg="breached" aria-label="Show breached passwords" class="text-left px-2.5 py-2 sm:p-3 rounded-2xl glass-panel border border-slate-800/80 hover:border-slate-600 transition flex flex-col justify-between">
+                        <span class="text-[10px] uppercase tracking-wider text-slate-400">Breached</span>
+                        <span id="metric-breached" class="text-base font-bold text-rose-400 font-mono">0</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Scrollable password list (the only part of the app screen that scrolls) -->
+            <div id="vault-scroll" class="flex-1 min-h-0 flex flex-col overflow-y-auto overscroll-contain pb-28 lg:pb-8">
+
+            <!-- Trash Bin Context Banner -->
+            <div id="trash-banner" class="hidden mb-4 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between gap-2 text-xs text-rose-200">
+                <span><i class="fa-solid fa-trash-arrow-up mr-1.5 text-rose-400"></i><strong>Recently Deleted:</strong> Items here can be restored anytime or permanently removed.</span>
+                <button data-action="emptyTrashBin" class="px-3 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold shrink-0 transition text-[11px]">
+                    Empty Trash
+                </button>
+            </div>
+
+            <!-- Vault Items Grid -->
+            <div id="vault-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="hidden flex-1 flex flex-col items-center justify-center text-center py-16 px-4 glass-panel rounded-3xl border border-slate-800/80 my-4">
+                <div class="w-14 h-14 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center mb-4 text-indigo-400">
+                    <i id="empty-icon" class="fa-solid fa-shield-halved text-2xl"></i>
+                </div>
+                <h3 id="empty-title" class="text-lg font-bold text-white">No Encrypted Entries Found</h3>
+                <p id="empty-desc" class="text-xs text-slate-400 max-w-sm mt-1 mb-6">
+                    Your vault is decrypted in memory and ready. Add your first login, payment card, or secret note.
+                </p>
+                <div id="empty-actions" class="flex flex-wrap gap-3 justify-center">
+                    <button data-action="openItemModal" class="py-2.5 px-5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold text-xs transition flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Add First Credential
+                    </button>
+                </div>
+            </div>
+            </div>
+        </section>
+
+        <!-- Mobile floating "add" button -->
+        <button data-action="openItemModal" aria-label="Add Encrypted Credential" title="Add Encrypted Credential" class="fab-safe lg:hidden fixed right-5 z-40 w-14 h-14 rounded-full bg-indigo-500 hover:bg-indigo-600 text-white text-xl shadow-lg shadow-black/40 flex items-center justify-center transition">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        </button>
+    </div>
+
+    <!-- ==================== MODAL: EMERGENCY RECOVERY KIT (FORGOT PASSWORD & ANTI-DELETION) ==================== -->
+    <div id="recovery-kit-modal" role="dialog" aria-modal="true" aria-label="Emergency Recovery Kit" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+        <div class="w-full max-w-lg glass-panel rounded-3xl p-6 sm:p-7 shadow-2xl border border-amber-500/30 my-8">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                        <i class="fa-solid fa-life-ring"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base sm:text-lg font-bold text-white">Emergency Recovery Kit</h3>
+                        <p class="text-[11px] text-amber-300/90">Protects against forgotten passwords & accidental deletion</p>
+                    </div>
+                </div>
+                <button data-action="closeRecoveryKitModal" aria-label="Close" class="text-slate-400 hover:text-white p-1.5 rounded-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="mt-4 space-y-4 text-xs">
+                <p class="text-slate-300 leading-relaxed">
+                    Your vault is encrypted with a random data key that is wrapped separately by your Master Password and by this 20-character <strong>Emergency Recovery Key</strong>. If you ever forget your Master Password, the Recovery Key can independently decrypt your vault and let you set a new password.
+                </p>
+
+                <!-- Recovery Key Display -->
+                <div class="p-4 rounded-2xl bg-slate-900 border border-amber-500/30">
+                    <div class="flex items-center justify-between text-[11px] text-amber-400 font-semibold uppercase tracking-wider mb-1.5">
+                        <span>Your 20-Character Recovery Key</span>
+                        <button data-action="copyRecoveryKey" class="hover:underline flex items-center gap-1">
+                            <i class="fa-regular fa-copy"></i> Copy Key
+                        </button>
+                    </div>
+                    <div id="recovery-kit-key-display" class="font-mono text-sm sm:text-base text-white tracking-wider break-all select-all py-1">
+                        SV-XXXX-XXXX-XXXX-XXXX-XXXX
+                    </div>
+                </div>
+
+                <!-- Password Hint Info -->
+                <div class="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 flex items-center justify-between gap-2">
+                    <div>
+                        <span class="text-slate-400 block text-[11px]">Configured Master Password Hint:</span>
+                        <span id="recovery-kit-hint-display" class="text-slate-200 font-medium mt-0.5 block">None set</span>
+                    </div>
+                </div>
+
+                <!-- Downloadable Kit Actions -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
+                    <button data-action="downloadRecoveryKitTxt" class="py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-shield"></i> Download Recovery Kit (.txt)
+                    </button>
+                    <button data-action="exportEncryptedVault" class="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 font-semibold text-xs transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-download"></i> Download Encrypted Vault
+                    </button>
+                </div>
+
+                <div class="pt-3 border-t border-slate-800 text-right">
+                    <button data-action="closeRecoveryKitModal" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition">
+                        I've Saved My Recovery Key
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: ADD / EDIT VAULT ITEM ==================== -->
+    <div id="item-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div class="w-full max-w-lg glass-panel rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-700/80 my-8">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <h3 id="modal-title" class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-shield-halved text-emerald-400"></i> New Encrypted Item
+                </h3>
+                <button data-action="closeItemModal" aria-label="Close" class="text-slate-400 hover:text-white p-1.5 rounded-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <form id="item-form" data-submit="saveVaultItem" class="space-y-4 mt-4">
+                <input type="hidden" id="item-id">
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Title / Service *</label>
+                        <input type="text" id="item-title" required placeholder="e.g., GitHub, AWS Root, HDFC NetBanking"
+                            class="w-full bg-slate-900/90 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Category</label>
+                        <select id="item-category" data-change="updateItemModalForCategory" class="w-full bg-slate-900/90 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none">
+                            <option value="login">Login</option>
+                            <option value="card">Payment Card</option>
+                            <option value="note">Secure Note</option>
+                            <option value="passkey">Passkey Credential</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Username / Email / Card #</label>
+                        <input type="text" id="item-username" placeholder="user@domain.com"
+                            class="w-full bg-slate-900/90 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Website URL (Optional)</label>
+                        <input type="text" id="item-url" placeholder="https://github.com"
+                            class="w-full bg-slate-900/90 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label id="item-password-label" class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Secret Password / PIN / Key *</label>
+                        <button type="button" data-action="fillRandomPasswordInModal" class="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1">
+                            <i class="fa-solid fa-rotate"></i> Generate Strong
+                        </button>
+                    </div>
+                    <div class="relative">
+                        <input type="password" id="item-password" required placeholder="Enter or generate secret..."
+                            data-input="evaluateModalPasswordEntropy"
+                            class="w-full bg-slate-900/90 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none pr-10">
+                        <button type="button" data-action="togglePasswordField" data-arg="item-password" aria-label="Show or hide secret" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+                            <i class="fa-regular fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center justify-between mt-1.5">
+                        <div class="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden mr-3">
+                            <div id="modal-entropy-bar" class="h-full w-0 bg-emerald-500 transition-all"></div>
+                        </div>
+                        <span id="modal-entropy-label" class="text-[11px] font-mono text-slate-400">0 bits entropy</span>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Encrypted Notes / Recovery Codes</label>
+                    <textarea id="item-notes" rows="3" placeholder="2FA backup codes, security questions, or private remarks..."
+                        class="w-full bg-slate-900/90 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none resize-none"></textarea>
+                </div>
+
+                <div class="flex items-center justify-between pt-2">
+                    <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-slate-300 select-none">
+                        <input type="checkbox" id="item-favorite" class="rounded bg-slate-900 border-slate-700 text-emerald-500 focus:ring-0">
+                        <span><i class="fa-solid fa-star text-amber-400 mr-1"></i> Pin to Favorites</span>
+                    </label>
+
+                    <div class="flex items-center gap-2">
+                        <button type="button" data-action="closeItemModal" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold text-xs transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-lock"></i> Encrypt & Save
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: SECURITY CENTER (MFA, PASSKEYS, SYNC, AUTO-FILL, ALERTS, MIGRATION) ==================== -->
+    <div id="security-center-modal" role="dialog" aria-modal="true" aria-label="Security Center" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+        <div class="w-full max-w-3xl glass-panel rounded-3xl p-6 sm:p-7 shadow-2xl border border-emerald-500/30 my-8 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                        <i class="fa-solid fa-user-shield text-lg"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base sm:text-lg font-bold text-white">Security Center, Sync & Migration Hub</h3>
+                        <p class="text-xs text-slate-400">Manage Biometrics, Unlock PIN, Sync, Migration, Sharing & Event Log</p>
+                    </div>
+                </div>
+                <button data-action="closeSecurityCenterModal" aria-label="Close" class="text-slate-400 hover:text-white p-1.5 rounded-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Vault Status (moved here from the main screen) -->
+            <div class="mt-5 p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3 text-xs">
+                <h4 class="font-bold text-white text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-shield-halved text-indigo-400"></i> Vault Status
+                </h4>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span id="last-backup-badge" class="text-[11px] font-mono px-2.5 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/25">No Offline Snapshot Yet</span>
+                    <button type="button" id="auto-backup-badge" data-action="handleAutoBackupBadgeClick" class="text-[11px] font-mono px-2.5 py-0.5 rounded-lg border bg-slate-800 text-slate-400 border-slate-700">Auto-Backup: Off</button>
+                    <span id="mfa-status-pill" class="text-[11px] font-mono px-2.5 py-0.5 rounded-lg bg-slate-800 text-slate-400 border border-slate-700">Biometrics & PIN: Off</span>
+                </div>
+                <button data-action="runVaultBreachCheck" id="breach-scan-btn" class="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 font-semibold transition flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-satellite-dish"></i> Breach Scan
+                </button>
+                <details class="group rounded-xl bg-slate-950 border border-slate-800">
+                    <summary class="cursor-pointer select-none list-none px-3 py-2.5 flex items-center justify-between text-slate-300 font-medium">
+                        <span><i class="fa-solid fa-circle-info text-sky-400 mr-1.5"></i>How does Breach Scan work?</span>
+                        <i class="fa-solid fa-chevron-down text-[10px] text-slate-500 transition group-open:rotate-180"></i>
+                    </summary>
+                    <ul class="px-3 pb-3 space-y-1.5 text-slate-400 leading-relaxed list-disc list-inside">
+                        <li>Checks your logins against a list of passwords leaked online (Have I Been Pwned).</li>
+                        <li><strong class="text-slate-200">Your passwords never leave this device</strong> — only the first 5 characters of a scrambled code are sent.</li>
+                        <li>Needs internet and runs only when you tap the button. Everything else works offline.</li>
+                    </ul>
+                </details>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 text-xs">
+                <!-- 1. Platform Biometrics (WebAuthn PRF) & Unlock PIN -->
+                <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h4 class="font-bold text-white text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-fingerprint text-indigo-400"></i> 1. Biometrics & Unlock PIN
+                        </h4>
+                        <span id="sec-mfa-badge" class="px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[10px]">Disabled</span>
+                    </div>
+                    <p class="text-slate-400 leading-relaxed">
+                        Biometric unlock uses your device's platform authenticator (Face ID, Touch ID, Windows Hello or Android biometrics) with the WebAuthn <strong>PRF</strong> extension to derive a hardware-bound key. Browsers or devices without PRF support cannot enroll.
+                    </p>
+                    <button data-action="openBiometricScannerModal" data-arg="auto" data-arg2="enroll" class="w-full py-2.5 px-3 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 border border-indigo-500/30 font-semibold transition flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-fingerprint text-indigo-400"></i> Enroll Face ID / Fingerprint
+                    </button>
+                    <div class="pt-2 border-t border-slate-800/80 space-y-2">
+                        <p class="text-slate-400 leading-relaxed">
+                            The <strong>Unlock PIN</strong> is mixed into the master-password key derivation, so the vault cannot be decrypted without it. Changing it requires your current master password.
+                        </p>
+                        <input type="password" id="mfa-current-password" autocomplete="current-password" placeholder="Current Master Password" aria-label="Current Master Password"
+                            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                        <input type="password" inputmode="numeric" id="mfa-current-pin" maxlength="6" autocomplete="off" placeholder="Current Unlock PIN" aria-label="Current Unlock PIN"
+                            class="hidden w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-mono text-white focus:outline-none focus:border-emerald-500">
+                        <div class="flex gap-2">
+                            <input type="password" inputmode="numeric" id="mfa-setup-pin" maxlength="6" autocomplete="off" placeholder="New 4–6 digit PIN" aria-label="New Unlock PIN"
+                                class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-mono text-white focus:outline-none focus:border-emerald-500">
+                            <button data-action="saveMfaConfiguration" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold transition">
+                                Save PIN
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+                        <span id="biometric-enrolled-status" class="text-[11px] text-slate-400">Biometrics: Not Enrolled</span>
+                        <div class="flex items-center gap-3">
+                            <button data-action="removeBiometricEnrollment" class="text-rose-400 hover:underline">Remove Biometrics</button>
+                            <button data-action="disableMfaConfiguration" class="text-rose-400 hover:underline">Remove PIN</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Auto-Fill (honest scope) -->
+                <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                    <h4 class="font-bold text-white text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-wand-magic text-sky-400"></i> 2. Website Auto-Fill
+                    </h4>
+                    <p class="text-slate-400 leading-relaxed">
+                        A web page cannot read or fill forms on other websites, so real auto-fill and auto-capture require a browser extension. Until then, use <strong>Copy &amp; Open</strong> on any login card: it copies the password (auto-cleared after 30 seconds) and opens the site.
+                    </p>
+                </div>
+
+                <!-- 3. Cross-Device Encrypted Sync String -->
+                <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                    <h4 class="font-bold text-white text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-rotate text-purple-400"></i> 3. Cross-Device Encrypted Sync
+                    </h4>
+                    <p class="text-slate-400 leading-relaxed">
+                        Copy your encrypted Sync Payload to move this vault to another device. Pasting a payload <strong>replaces</strong> the vault on this device (the current one is kept as a previous-version backup).
+                    </p>
+                    <div class="flex gap-2">
+                        <button data-action="copyEncryptedSyncToken" class="flex-1 py-2 px-3 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 font-medium transition flex items-center justify-center gap-1.5">
+                            <i class="fa-regular fa-copy"></i> Copy Sync Payload
+                        </button>
+                        <button data-action="applyEncryptedSyncToken" class="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> Apply Sync Payload
+                        </button>
+                    </div>
+                    <input type="text" id="sync-token-input" aria-label="Sync payload" placeholder="Paste encrypted sync payload from another device..."
+                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-mono text-[11px] text-slate-300 focus:outline-none">
+                </div>
+
+                <!-- 4. CSV & JSON Password Manager Migration (Import/Export) -->
+                <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                    <h4 class="font-bold text-white text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv text-amber-400"></i> 4. Password Manager Migration
+                    </h4>
+                    <p class="text-slate-400 leading-relaxed">
+                        Import CSV exports from Chrome, Firefox, Bitwarden, 1Password or SecureVault (columns are detected from the header row). CSV exports are <strong>unencrypted</strong> — delete them after use.
+                    </p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 font-medium transition flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                            <i class="fa-solid fa-file-import"></i> Import CSV / .vault
+                            <input type="file" accept=".csv,.json,.vault" class="hidden" data-change="importMigrationFile">
+                        </label>
+                        <button data-action="exportVaultCSV" class="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-file-csv"></i> Export CSV
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 5. Automatic encrypted backup to this device -->
+                <div class="md:col-span-2 p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h4 class="font-bold text-white text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-hard-drive text-emerald-400"></i> 5. Automatic Device Backup
+                        </h4>
+                        <span id="auto-backup-status" class="px-2 py-0.5 rounded font-mono text-[10px] border bg-slate-800 text-slate-400 border-slate-700">Off</span>
+                    </div>
+                    <p class="text-slate-400 leading-relaxed">
+                        After every save, delete, restore or settings change, the <strong>encrypted</strong> vault is written to your device. The backup location also gets <strong>HOW-TO-DECRYPT-SecureVault-Backup.txt</strong> and an <strong>Offline Decrypter</strong> page, so you can open your backup with your Master Password or Recovery Key even if this website no longer exists.
+                    </p>
+                    <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start gap-2">
+                        <i class="fa-solid fa-location-dot text-slate-400 mt-0.5"></i>
+                        <div class="min-w-0">
+                            <span class="block text-[10px] uppercase tracking-wider text-slate-500">Backup location</span>
+                            <span id="auto-backup-location" class="block text-slate-200 break-words">Not saving automatically</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button id="auto-backup-folder-btn" data-action="chooseAutoBackupFolder" class="hidden py-3 sm:py-2.5 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 font-medium transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-folder-open"></i> <span id="auto-backup-folder-label">Choose Backup Folder</span>
+                        </button>
+                        <button id="auto-backup-download-btn" data-action="enableAutoBackupDownloads" class="py-3 sm:py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-download"></i> <span id="auto-backup-download-label">Turn On Auto-Download</span>
+                        </button>
+                        <button id="auto-backup-share-btn" data-action="shareBackupToLocation" class="hidden py-3 sm:py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-share-from-square"></i> Save Backup To…
+                        </button>
+                        <button data-action="downloadDecryptionKit" class="py-3 sm:py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-book"></i> Download Decryption Kit
+                        </button>
+                    </div>
+                    <div id="auto-backup-download-help" class="hidden p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                        <span class="block font-semibold text-slate-300"><i class="fa-solid fa-sliders mr-1 text-slate-400"></i>Change the download location</span>
+                        <p id="auto-backup-download-help-text" class="text-slate-400 leading-relaxed"></p>
+                    </div>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">
+                        Folder mode keeps <em>SecureVault-AutoBackup-latest.vault.json</em> plus one file per day. Auto-Download saves a new file after each change. Keep your Recovery Key somewhere else, never in the backup folder.
+                    </p>
+                    <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+                        <span id="auto-backup-last" class="text-[11px] text-slate-400">Last automatic backup: never</span>
+                        <div class="flex items-center gap-4">
+                            <button id="auto-backup-reconnect-btn" data-action="reconnectAutoBackupFolder" class="hidden py-1.5 text-amber-300 hover:underline">Reconnect Folder</button>
+                            <button id="auto-backup-off-btn" data-action="disableAutoBackup" class="hidden py-1.5 text-rose-400 hover:underline">Turn Off</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. Receive an encrypted shared credential -->
+            <div class="mt-4 p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2 text-xs">
+                <h4 class="font-bold text-white text-xs sm:text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-box-open text-emerald-400"></i> 6. Open a Shared Credential
+                </h4>
+                <textarea id="receive-share-bundle" rows="2" aria-label="Encrypted share bundle" placeholder="Paste the encrypted share bundle..."
+                    class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-mono text-[11px] text-slate-300 focus:outline-none"></textarea>
+                <div class="flex gap-2">
+                    <input type="password" id="receive-share-passphrase" autocomplete="off" aria-label="Share passphrase" placeholder="One-time passphrase"
+                        class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-mono text-white focus:outline-none">
+                    <button data-action="decryptReceivedShare" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold transition">
+                        Decrypt & Import
+                    </button>
+                </div>
+            </div>
+
+            <!-- 7. Local Security Event Log -->
+            <div class="mt-4 p-4 rounded-2xl bg-slate-900/90 border border-slate-800">
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="font-bold text-white text-xs sm:text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-bell text-rose-400"></i> 7. Local Security Event Log
+                    </h4>
+                    <button data-action="clearSecurityLogs" class="text-[11px] text-slate-400 hover:text-white">Clear Log</button>
+                </div>
+                <p class="text-[11px] text-slate-500 mb-2">Stored unencrypted on this device only; it contains no site names or usernames.</p>
+                <div id="security-audit-log-list" class="space-y-1.5 max-h-36 overflow-y-auto text-[11px] font-mono"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: PASSWORD HEALTH REPORT ==================== -->
+    <div id="health-modal" role="dialog" aria-modal="true" aria-label="Password Health" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="w-full max-w-lg glass-panel rounded-3xl p-5 sm:p-6 border border-slate-700/80 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-heart-pulse text-emerald-400"></i> Password Health
+                </h3>
+                <button data-action="closeHealthModal" aria-label="Close" class="text-slate-400 hover:text-white p-1.5">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="mt-4 space-y-4 text-xs">
+                <div class="flex items-center gap-4 p-4 rounded-2xl bg-slate-900/90 border border-slate-800">
+                    <span id="health-score-big" class="text-3xl font-bold font-mono text-emerald-400">100%</span>
+                    <p id="health-score-text" class="text-slate-300 leading-relaxed"></p>
+                </div>
+
+                <details class="group rounded-xl bg-slate-950 border border-slate-800">
+                    <summary class="cursor-pointer select-none list-none px-3 py-2.5 flex items-center justify-between text-slate-300 font-medium">
+                        <span><i class="fa-solid fa-circle-info text-sky-400 mr-1.5"></i>How is Health calculated?</span>
+                        <i class="fa-solid fa-chevron-down text-[10px] text-slate-500 transition group-open:rotate-180"></i>
+                    </summary>
+                    <ul class="px-3 pb-3 space-y-1.5 text-slate-400 leading-relaxed list-disc list-inside">
+                        <li>Only website logins are checked (cards, notes and passkeys are skipped).</li>
+                        <li>Starts at <strong class="text-slate-200">100%</strong>, then loses 10 per weak, 12 per reused and 20 per breached password.</li>
+                        <li><strong class="text-amber-300">Weak</strong>: too short or simple, easy to guess.</li>
+                        <li><strong class="text-purple-300">Reused</strong>: same password on more than one login.</li>
+                        <li><strong class="text-rose-300">Breached</strong>: found in leaks by Breach Scan (Security Center).</li>
+                        <li>Checked on this device only. Nothing is sent anywhere.</li>
+                    </ul>
+                </details>
+
+                <section id="health-section-weak" class="space-y-2">
+                    <h4 class="font-bold text-white flex items-center justify-between">
+                        <span><i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1.5"></i>Weak</span>
+                        <span id="health-count-weak" class="font-mono text-amber-300">0</span>
+                    </h4>
+                    <ul id="health-list-weak" class="space-y-1.5"></ul>
+                </section>
+
+                <section id="health-section-reused" class="space-y-2">
+                    <h4 class="font-bold text-white flex items-center justify-between">
+                        <span><i class="fa-solid fa-clone text-purple-400 mr-1.5"></i>Reused</span>
+                        <span id="health-count-reused" class="font-mono text-purple-300">0</span>
+                    </h4>
+                    <ul id="health-list-reused" class="space-y-1.5"></ul>
+                </section>
+
+                <section id="health-section-breached" class="space-y-2">
+                    <h4 class="font-bold text-white flex items-center justify-between">
+                        <span><i class="fa-solid fa-skull-crossbones text-rose-400 mr-1.5"></i>Breached</span>
+                        <span id="health-count-breached" class="font-mono text-rose-300">0</span>
+                    </h4>
+                    <p class="text-[11px] text-slate-500">Updated when you run Breach Scan in the Security Center.</p>
+                    <ul id="health-list-breached" class="space-y-1.5"></ul>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: CSPRNG PASSWORD & ENTROPY GENERATOR ==================== -->
+    <div id="generator-modal" role="dialog" aria-modal="true" aria-label="Password Generator" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-md glass-panel rounded-3xl p-6 border border-slate-700/80 shadow-2xl">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-dice text-indigo-400"></i> Password Generator
+                </h3>
+                <button data-action="closeGeneratorModal" aria-label="Close" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="mt-4 space-y-4 text-xs">
+                <div class="p-3.5 rounded-2xl bg-slate-900 border border-slate-800">
+                    <div class="flex items-center justify-between text-[10px] uppercase text-slate-400 mb-1">
+                        <span>Generated Secret</span>
+                        <span id="gen-entropy-badge" class="font-bold text-emerald-400">128 bits</span>
+                    </div>
+                    <div id="gen-output" class="font-mono text-sm sm:text-base text-white break-all select-all py-1 font-semibold"></div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs text-slate-300 mb-1">
+                        <span>Character Length</span>
+                        <strong id="gen-length-val" class="font-mono text-indigo-400">20</strong>
+                    </div>
+                    <input type="range" id="gen-length" min="8" max="48" value="20" data-input="generateModalPassword" class="w-full accent-indigo-500">
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-slate-300">
+                    <label class="flex items-center gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
+                        <input type="checkbox" id="gen-upper" checked data-change="generateModalPassword"> <span>Uppercase (A-Z)</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
+                        <input type="checkbox" id="gen-lower" checked data-change="generateModalPassword"> <span>Lowercase (a-z)</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
+                        <input type="checkbox" id="gen-num" checked data-change="generateModalPassword"> <span>Numbers (2-9)</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
+                        <input type="checkbox" id="gen-sym" checked data-change="generateModalPassword"> <span>Symbols (!@#$)</span>
+                    </label>
+                </div>
+                <div class="grid grid-cols-2 gap-2 pt-2">
+                    <button type="button" data-action="copyGeneratedPassword" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold transition">
+                        Copy Password
+                    </button>
+                    <button type="button" data-action="useGeneratedPasswordInNewItem" class="py-2.5 px-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold transition">
+                        Use in New Item
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: LIVE CIPHERTEXT INSPECTOR ==================== -->
+    <div id="crypto-modal" role="dialog" aria-modal="true" aria-label="Ciphertext Inspector" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-lg glass-panel rounded-3xl p-6 border border-slate-700/80 shadow-2xl">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-code text-sky-400"></i> Live AES-256-GCM Ciphertext Inspector
+                </h3>
+                <button data-action="closeCryptoInspectorModal" aria-label="Close" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="mt-4 space-y-3 text-xs font-mono">
+                <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                    <span class="text-[10px] text-slate-400 block uppercase">Active Suite</span>
+                    <span id="inspect-suite" class="text-indigo-300 font-semibold"></span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                        <span class="text-[10px] text-slate-400 block uppercase">PBKDF2 Salt (128-Bit)</span>
+                        <span id="inspect-salt" class="text-slate-200 break-all"></span>
+                    </div>
+                    <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                        <span class="text-[10px] text-slate-400 block uppercase">GCM IV (96-Bit)</span>
+                        <span id="inspect-iv" class="text-slate-200 break-all"></span>
+                    </div>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                    <span class="text-[10px] text-slate-400 block uppercase mb-1">Encrypted Payload in localStorage</span>
+                    <div id="inspect-ciphertext" class="max-h-40 overflow-y-auto break-all text-[11px] text-slate-400 select-all"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: ENCRYPTED CREDENTIAL SHARING ==================== -->
+    <div id="share-item-modal" role="dialog" aria-modal="true" aria-labelledby="share-item-title" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-md glass-panel rounded-3xl p-6 border border-slate-700/80 shadow-2xl">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div>
+                    <span class="text-[10px] uppercase tracking-widest text-indigo-400 font-semibold">Zero-Knowledge Share</span>
+                    <h3 id="share-item-title" class="text-lg font-bold text-white">Share Credential</h3>
+                </div>
+                <button data-action="closeShareModal" aria-label="Close" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="mt-4 space-y-3 text-xs">
+                <div>
+                    <label class="block text-[10px] uppercase text-slate-400 mb-1">1. One-Time Decryption Passphrase</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="share-passphrase" readonly class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 font-mono text-xs text-white">
+                        <button type="button" data-action="copySharePassphrase" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold">Copy</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] uppercase text-slate-400 mb-1">2. AES-256-GCM Encrypted Bundle</label>
+                    <textarea id="share-ciphertext-box" rows="4" readonly class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 font-mono text-[11px] text-slate-300"></textarea>
+                </div>
+                <p class="text-[11px] text-slate-400">Send the bundle and the passphrase over two different channels. The recipient opens it in SecureVault → Security Center → Open a Shared Credential.</p>
+                <button type="button" data-action="copyEncryptedSharePackage" class="w-full py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold">
+                    Copy Encrypted Share Bundle
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: APPLE FACE ID & ANDROID FINGERPRINT BIOMETRIC VERIFICATION ==================== -->
+    <div id="biometric-modal" role="dialog" aria-modal="true" aria-labelledby="bio-modal-title" class="fixed inset-0 z-[70] hidden bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4">
+        <div class="w-full max-w-sm glass-panel rounded-3xl p-6 sm:p-7 shadow-2xl border border-indigo-500/40 text-center relative overflow-hidden">
+            <h3 id="bio-modal-title" class="text-lg font-bold text-white">Biometric Unlock</h3>
+            <p id="bio-modal-subtitle" class="text-xs text-slate-400 mt-1">Face ID, Touch ID, Windows Hello or Android biometrics</p>
+
+            <div class="my-6 relative w-36 h-36 mx-auto flex items-center justify-center">
+                <div class="inset-0 absolute rounded-full border-2 border-indigo-500/40 biometric-ring"></div>
+                <div class="relative w-32 h-32 rounded-full bg-slate-900/95 border-2 border-indigo-500/50 overflow-hidden flex flex-col items-center justify-center">
+                    <i class="fa-solid fa-fingerprint text-5xl text-indigo-400"></i>
+                </div>
+            </div>
+
+            <div id="bio-status-box" role="status" class="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-mono text-indigo-300 mb-5">
+                Your device will ask you to verify your identity.
+            </div>
+
+            <div class="flex flex-col gap-2">
+                <button type="button" id="bio-Verify-btn" data-action="triggerBiometricVerificationStep" class="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold text-xs transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-circle-check"></i> Verify Now
+                </button>
+                <button type="button" data-action="closeBiometricScannerModal" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: CONFIRM WIPE VAULT (WITH TYPED CONFIRMATION GUARD) ==================== -->
+    <div id="reset-modal" role="dialog" aria-modal="true" aria-label="Wipe Vault" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-sm glass-panel rounded-3xl p-6 shadow-2xl border border-rose-500/30 text-center">
+            <div class="w-12 h-12 rounded-2xl bg-rose-500/15 text-rose-400 flex items-center justify-center mx-auto mb-3">
+                <i class="fa-solid fa-skull-crossbones text-xl"></i>
+            </div>
+            <h3 class="text-lg font-bold text-white">Anti-Accidental Wipe Guard</h3>
+            <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+                To prevent accidental deletion of your entire vault, type <strong class="text-rose-400 font-mono">DELETE</strong> below or download a backup first.
+            </p>
+            <input type="text" id="wipe-confirm-input" placeholder="Type DELETE to confirm" aria-label="Type DELETE to confirm"
+                class="mt-3 w-full bg-slate-900 border border-slate-700 focus:border-rose-500 rounded-xl px-3.5 py-2 text-xs text-center font-mono uppercase text-white focus:outline-none">
+            <button data-action="exportEncryptedVault" class="mt-3 w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-download"></i> Download Encrypted Backup First
+            </button>
+            <div class="flex gap-2.5 mt-5">
+                <button data-action="closeResetVaultModal" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium">
+                    Cancel
+                </button>
+                <button data-action="confirmWipeVault" class="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-semibold">
+                    Destroy Vault
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== JAVASCRIPT: DUAL-KEY CRYPTO, TRASH BIN & PWA ENGINE ==================== -->
+    <script src="securevault-decrypt-kit.js"></script>
+    <script src="securevault.js"></script>
+</body>
+</html>
