@@ -214,7 +214,7 @@
     <div id="app-screen" class="hidden app-viewport overflow-hidden flex flex-col lg:flex-row">
         
         <!-- Sidebar Navigation (compact fixed header on mobile) -->
-        <aside class="w-full lg:w-72 glass-panel border-b lg:border-b-0 lg:border-r border-slate-800/80 flex flex-col justify-between shrink-0 lg:h-full lg:overflow-y-auto z-30">
+        <aside class="relative w-full lg:w-72 glass-panel border-b lg:border-b-0 lg:border-r border-slate-800/80 flex flex-col justify-between shrink-0 lg:h-full lg:overflow-y-auto z-30">
             <div class="px-4 pt-3 pb-2 sm:p-6">
                 <div class="flex items-center justify-between pb-3 lg:pb-4 border-b border-slate-800/80">
                     <div class="flex items-center gap-2.5">
@@ -232,21 +232,32 @@
                         </div>
                     </div>
 
-                    <!-- Mobile Quick Actions -->
-                    <div class="flex items-center gap-1.5 lg:hidden">
-                        <button data-action="openSecurityCenterModal" title="Security Center & Vault Status" aria-label="Security Center & Vault Status" class="relative p-2 rounded-xl bg-slate-800 text-emerald-300">
-                            <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
+                    <!-- Mobile Menu (desktop uses the sidebar buttons) -->
+                    <div class="relative lg:hidden">
+                        <button id="mobile-menu-btn" data-action="toggleMobileMenu" aria-label="Open menu" aria-haspopup="menu" aria-expanded="false" aria-controls="mobile-menu" class="relative w-11 h-11 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center transition">
+                            <i class="fa-solid fa-bars text-lg" aria-hidden="true"></i>
                             <span class="status-alert-dot hidden absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-slate-900" aria-hidden="true"></span>
                         </button>
-                        <button data-action="openRecoveryKitModal" title="Emergency Recovery Kit" aria-label="Emergency Recovery Kit" class="p-2 rounded-xl bg-slate-800 text-amber-400">
-                            <i class="fa-solid fa-life-ring" aria-hidden="true"></i>
-                        </button>
-                        <button data-action="openGeneratorModal" title="Password Generator" aria-label="Password Generator" class="p-2 rounded-xl bg-slate-800 text-slate-200">
-                            <i class="fa-solid fa-sliders" aria-hidden="true"></i>
-                        </button>
-                        <button data-action="lockVault" title="Lock Vault" aria-label="Lock Vault" class="p-2 rounded-xl bg-rose-500/20 text-rose-400">
-                            <i class="fa-solid fa-lock" aria-hidden="true"></i>
-                        </button>
+                        <div id="mobile-menu" role="menu" aria-label="Vault menu" class="hidden absolute right-0 top-full mt-2 w-64 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl shadow-black/50 p-1.5 text-sm">
+                            <button role="menuitem" data-action="openSecurityCenterModal" class="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-slate-200 hover:bg-slate-800 text-left">
+                                <i class="fa-solid fa-user-shield w-5 text-center text-emerald-400" aria-hidden="true"></i>
+                                <span class="flex-1">Security Center & Status</span>
+                                <span class="status-alert-dot hidden w-2.5 h-2.5 rounded-full bg-amber-400" aria-hidden="true"></span>
+                            </button>
+                            <button role="menuitem" data-action="openRecoveryKitModal" class="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-slate-200 hover:bg-slate-800 text-left">
+                                <i class="fa-solid fa-life-ring w-5 text-center text-amber-400" aria-hidden="true"></i>
+                                <span class="flex-1">Recovery Kit</span>
+                            </button>
+                            <button role="menuitem" data-action="openGeneratorModal" class="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-slate-200 hover:bg-slate-800 text-left">
+                                <i class="fa-solid fa-dice w-5 text-center text-purple-400" aria-hidden="true"></i>
+                                <span class="flex-1">Password Generator</span>
+                            </button>
+                            <div class="my-1 border-t border-slate-800"></div>
+                            <button role="menuitem" data-action="lockVault" class="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-rose-300 hover:bg-rose-500/15 text-left font-semibold">
+                                <i class="fa-solid fa-lock w-5 text-center" aria-hidden="true"></i>
+                                <span class="flex-1">Lock Vault</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 

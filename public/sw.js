@@ -1,4 +1,4 @@
-const CACHE_NAME = 'securevault-shell-v16';
+const CACHE_NAME = 'securevault-shell-v17';
 // Every asset is same-origin; nothing is fetched from third-party CDNs.
 // './' (not './index.html'): Cloudflare Pages redirects /index.html to /, and redirected responses can't serve navigations.
 const APP_SHELL = [

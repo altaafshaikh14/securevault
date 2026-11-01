@@ -702,6 +702,7 @@ const SENSITIVE_FIELD_IDS = [
 ];
 
 function lockVault(message = 'Vault locked. Memory cleared.') {
+    setMobileMenu(false);
     if (activeSession.pendingClipboardText !== null) scrubClipboardNow(true);
     clearInterval(activeSession.idleInterval);
     clearInterval(activeSession.clipboardInterval);
@@ -2673,6 +2674,11 @@ function closeAllModals() {
 
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+        if (isMobileMenuOpen()) {
+            setMobileMenu(false);
+            document.getElementById('mobile-menu-btn').focus();
+            return;
+        }
         if (modalStack.length) MODAL_CLOSERS[modalStack[modalStack.length - 1]]();
         return;
     }
@@ -2703,8 +2709,24 @@ document.addEventListener('mousedown', (e) => {
 /********************************************************************
  * 10. DELEGATED EVENT HANDLING (NO INLINE HANDLERS, CSP script-src 'self')
  ********************************************************************/
+function isMobileMenuOpen() {
+    const menu = document.getElementById('mobile-menu');
+    return !!menu && !menu.classList.contains('hidden');
+}
+
+function setMobileMenu(open) {
+    const menu = document.getElementById('mobile-menu');
+    const btn = document.getElementById('mobile-menu-btn');
+    if (!menu || !btn) return;
+    menu.classList.toggle('hidden', !open);
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    btn.querySelector('i').className = `fa-solid ${open ? 'fa-xmark' : 'fa-bars'} text-lg`;
+}
+
 // Markup can only trigger actions listed here; data-* values are never evaluated as code
 const CLICK_ACTIONS = {
+    toggleMobileMenu: () => setMobileMenu(!isMobileMenuOpen()),
     togglePasswordField: (el) => togglePasswordField(el.dataset.arg, el),
     toggleHintDisplay: () => toggleHintDisplay(),
     openBiometricScannerModal: (el) => openBiometricScannerModal(el.dataset.arg, el.dataset.arg2),
@@ -2793,6 +2815,8 @@ function dispatchAction(map, name, ...args) {
 }
 
 document.addEventListener('click', (e) => {
+    // Any tap outside the menu button (including on a menu item) closes the mobile menu
+    if (isMobileMenuOpen() && !e.target.closest('#mobile-menu-btn')) setMobileMenu(false);
     const el = e.target.closest('[data-action]');
     if (el) dispatchAction(CLICK_ACTIONS, el.dataset.action, el, e);
 });
