@@ -404,6 +404,37 @@ function updateIdleDisplay() {
 });
 document.addEventListener('visibilitychange', checkIdleDeadline);
 
+// Phones/tablets: lock as soon as the app goes to the background or the screen turns off
+const LOCK_ON_HIDE = window.matchMedia('(pointer: coarse)').matches;
+const EXTERNAL_UI_OPEN_WINDOW_MS = 10000;
+const EXTERNAL_UI_MAX_AWAY_MS = 120000;
+let externalUiRequestedAt = 0;
+let awayInExternalUi = false;
+let hiddenSince = 0;
+
+// File pickers, share sheets and biometric prompts can briefly background the page; they must not lock the vault
+function expectExternalUi() {
+    externalUiRequestedAt = Date.now();
+}
+
+function handleBackgroundLock() {
+    if (document.hidden) {
+        hiddenSince = Date.now();
+        awayInExternalUi = Date.now() - externalUiRequestedAt < EXTERNAL_UI_OPEN_WINDOW_MS;
+        if (LOCK_ON_HIDE && activeSession.dek && !awayInExternalUi) {
+            lockVault('Vault locked because you left the app.', { keepClipboard: true });
+        }
+        return;
+    }
+    if (LOCK_ON_HIDE && activeSession.dek && awayInExternalUi && Date.now() - hiddenSince > EXTERNAL_UI_MAX_AWAY_MS) {
+        lockVault('Vault locked because you were away too long.', { keepClipboard: true });
+    }
+    awayInExternalUi = false;
+    externalUiRequestedAt = 0;
+    flushDeferredClipboardScrub();
+}
+document.addEventListener('visibilitychange', handleBackgroundLock);
+
 /********************************************************************
  * 4. VAULT SETUP, UNLOCK, HINT & EMERGENCY RECOVERY FLOWS
  ********************************************************************/
@@ -701,9 +732,16 @@ const SENSITIVE_FIELD_IDS = [
     'mfa-current-pin', 'mfa-setup-pin', 'sync-token-input', 'item-password'
 ];
 
-function lockVault(message = 'Vault locked. Memory cleared.') {
+function lockVault(message = 'Vault locked. Memory cleared.', { keepClipboard = false } = {}) {
     setMobileMenu(false);
-    if (activeSession.pendingClipboardText !== null) scrubClipboardNow(true);
+    if (activeSession.pendingClipboardText !== null) {
+        if (keepClipboard) {
+            // The user may be switching apps to paste, so finish the 30s window instead of wiping it now
+            deferClipboardScrub(activeSession.pendingClipboardText, Math.max(0, activeSession.clipboardSecondsRemaining) * 1000);
+        } else {
+            scrubClipboardNow(true);
+        }
+    }
     clearInterval(activeSession.idleInterval);
     clearInterval(activeSession.clipboardInterval);
     const category = activeSession.category;
@@ -1756,6 +1794,7 @@ function describeBiometricError(err) {
 }
 
 async function triggerBiometricVerificationStep() {
+    expectExternalUi();
     const statusEl = document.getElementById('bio-status-box');
     const verifyBtn = document.getElementById('bio-Verify-btn');
     verifyBtn.disabled = true;
@@ -2210,6 +2249,7 @@ function pauseAutoBackup(reason) {
 }
 
 async function chooseAutoBackupFolder() {
+    expectExternalUi();
     if (!supportsFolderBackup()) {
         showToast('This browser cannot save into a chosen folder. Use Auto-Download or "Save Backup To…" instead.', 'error');
         return;
@@ -2296,6 +2336,7 @@ function supportsBackupShare() {
 
 // Opens the OS share/save sheet (e.g. iOS "Save to Files") so the user picks any folder or cloud drive
 async function shareBackupToLocation() {
+    expectExternalUi();
     const files = buildBackupShareFiles();
     if (!files) {
         showToast('There is no vault on this device to back up.', 'error');
@@ -2538,6 +2579,7 @@ async function copyTextToClipboard(text, message = 'Copied to clipboard', isSecr
 
 // Automatic clipboard clearing 30 seconds after a secret is copied
 function startClipboardSanitizerCountdown() {
+    cancelDeferredClipboardScrub();
     clearInterval(activeSession.clipboardInterval);
     activeSession.clipboardSecondsRemaining = 30;
     const bar = document.getElementById('clipboard-countdown-bar');
@@ -2555,6 +2597,18 @@ function startClipboardSanitizerCountdown() {
 }
 
 // Only clears the clipboard if it still holds the secret we put there (when the browser lets us check)
+async function clearClipboardIfUnchanged(expected) {
+    if (navigator.clipboard && navigator.clipboard.readText && navigator.permissions) {
+        const perm = await navigator.permissions.query({ name: 'clipboard-read' }).catch(() => null);
+        if (perm && perm.state === 'granted') {
+            const current = await navigator.clipboard.readText();
+            if (current !== expected) return false;
+        }
+    }
+    await writeClipboard(' ');
+    return true;
+}
+
 async function scrubClipboardNow(silent = false) {
     const expected = activeSession.pendingClipboardText;
     activeSession.pendingClipboardText = null;
@@ -2564,18 +2618,30 @@ async function scrubClipboardNow(silent = false) {
     if (expected === null) return;
 
     try {
-        if (navigator.clipboard && navigator.clipboard.readText && navigator.permissions) {
-            const perm = await navigator.permissions.query({ name: 'clipboard-read' }).catch(() => null);
-            if (perm && perm.state === 'granted') {
-                const current = await navigator.clipboard.readText();
-                if (current !== expected) return;
-            }
-        }
-        await writeClipboard(' ');
-        if (!silent) showToast('Clipboard cleared for security.', 'info');
+        if ((await clearClipboardIfUnchanged(expected)) && !silent) showToast('Clipboard cleared for security.', 'info');
     } catch (e) {
         if (!silent) showToast('Could not clear the clipboard — this window must be focused. Clear it manually.', 'error');
     }
+}
+
+// A secret copied before a background lock is cleared once its 30s window ends and the app is visible again
+let deferredClipboardScrub = null;
+
+function deferClipboardScrub(text, delayMs) {
+    cancelDeferredClipboardScrub();
+    deferredClipboardScrub = { text, at: Date.now() + delayMs, timer: setTimeout(flushDeferredClipboardScrub, delayMs) };
+}
+
+function cancelDeferredClipboardScrub() {
+    if (deferredClipboardScrub) clearTimeout(deferredClipboardScrub.timer);
+    deferredClipboardScrub = null;
+}
+
+function flushDeferredClipboardScrub() {
+    if (!deferredClipboardScrub || document.hidden || Date.now() < deferredClipboardScrub.at) return;
+    const { text } = deferredClipboardScrub;
+    deferredClipboardScrub = null;
+    clearClipboardIfUnchanged(text).catch(() => {});
 }
 
 function showToast(message, type = 'info', options = {}) {
@@ -2817,6 +2883,8 @@ function dispatchAction(map, name, ...args) {
 document.addEventListener('click', (e) => {
     // Any tap outside the menu button (including on a menu item) closes the mobile menu
     if (isMobileMenuOpen() && !e.target.closest('#mobile-menu-btn')) setMobileMenu(false);
+    const fileLabel = e.target.closest('label');
+    if (e.target.matches('input[type="file"]') || (fileLabel && fileLabel.querySelector('input[type="file"]'))) expectExternalUi();
     const el = e.target.closest('[data-action]');
     if (el) dispatchAction(CLICK_ACTIONS, el.dataset.action, el, e);
 });
